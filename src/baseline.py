@@ -1,13 +1,16 @@
-"""Classical Hotelling baseline: uniform customers, straight-line distance,
-same price and quality, no delivery, no roads. Only locations are chosen."""
+"""Classical Hotelling baseline on the SAME town size (20 x 10): uniform customers,
+straight-line distance, same price and quality, no delivery, no roads.
+Only locations are chosen."""
 import numpy as np
 
-np.random.seed(42)
-N = 500
-CX = np.random.uniform(0, 10, N)       # SIMULATED customers
-CY = np.random.uniform(0, 10, N)
-LOCS = [(x, y) for x in range(11) for y in range(11)]
-DIST = np.array([np.hypot(CX - x, CY - y) for x, y in LOCS])   # (121, 100)
+TOWN_W, TOWN_H = 20, 10
+gx, gy = np.meshgrid(np.arange(0, TOWN_W, 0.5), np.arange(0, TOWN_H, 0.5))
+rng = np.random.RandomState(42)
+CX = gx.ravel() + rng.uniform(0, 0.5, gx.size)     # SIMULATED, evenly spread customers
+CY = gy.ravel() + rng.uniform(0, 0.5, gy.size)
+N = len(CX)
+LOCS = [(x, y) for x in range(TOWN_W + 1) for y in range(TOWN_H + 1)]
+DIST = np.array([np.hypot(CX - x, CY - y) for x, y in LOCS])
 PRICE, VAR, FIXED = 150, 50, 1000
 
 def customers(i, j):
@@ -36,7 +39,7 @@ def find_nash(i, j, max_iter=50):
     return i, j, False
 
 if __name__ == "__main__":
-    i, j = LOCS.index((2, 5)), LOCS.index((8, 5))
+    i, j = LOCS.index((4, 5)), LOCS.index((16, 5))
     i, j, ok = find_nash(i, j)
     n = customers(i, j)
     print("Converged:", ok)
