@@ -3,7 +3,7 @@ same price and quality, no delivery, no roads. Only locations are chosen."""
 import numpy as np
 
 np.random.seed(42)
-N = 100
+N = 500
 CX = np.random.uniform(0, 10, N)       # SIMULATED customers
 CY = np.random.uniform(0, 10, N)
 LOCS = [(x, y) for x in range(11) for y in range(11)]

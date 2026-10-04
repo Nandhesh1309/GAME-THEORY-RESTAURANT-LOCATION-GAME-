@@ -4,16 +4,16 @@ import numpy as np
 import networkx as nx
 
 TOWN_SIZE = 10
-N_CUSTOMERS = 100
+N_CUSTOMERS = 500
 VAR_COST, FIXED_COST = 50, 1000
-PRICES, QUALITIES, RADII = [100, 150, 200, 250], [1, 2, 3, 4, 5], [2, 4, 6, 8]
+PRICES, QUALITIES, RADII = [100, 125, 150, 175, 200, 225, 250], [1, 2, 3, 4, 5], [2, 4, 6, 8]
 LOCS = range(TOWN_SIZE + 1)
 STRATEGIES = [(x, y, p, q, r) for x in LOCS for y in LOCS
               for p in PRICES for q in QUALITIES for r in RADII]   # 9680
 
-ANCHORS = [("Town centre", 5.0, 5.0, 1.0, 40),
-           ("Shopping mall", 2.0, 8.0, 0.8, 20),
-           ("Business district", 8.0, 2.5, 0.8, 20)]
+ANCHORS = [("Town centre", 5.0, 5.0, 1.2, 180),
+           ("Shopping mall", 2.0, 8.0, 0.9, 100),
+           ("Business district", 8.0, 2.5, 0.9, 100)]
 
 def make_customers(seed=42):
     rng = np.random.RandomState(seed)
@@ -61,15 +61,15 @@ def travel_cost(x, y):
 def customer_cost(s):
     """Lowest cost for each customer (dine-in or delivery)."""
     x, y, p, q, r = s
-    dine = p + 10 * travel_cost(x, y) - 5 * q
+    dine = p + 12 * travel_cost(x, y) - 4 * q
     dist = np.hypot(CX - x, CY - y)
-    deliv = p + (10 + 2 * dist) - 5 * q
+    deliv = p + (30 + 5 * dist) - 4 * q
     return np.where(dist <= r, np.minimum(dine, deliv), dine)
 
 def profit(s, n):
     return (s[2] - VAR_COST) * n - FIXED_COST
 
-# Cost of every customer for every strategy (computed once): shape (9680, 100)
+# Cost of every customer for every strategy (computed once): shape (16940, 500)
 COSTS = np.array([customer_cost(s) for s in STRATEGIES])
 PRICE_ARR = np.array([s[2] for s in STRATEGIES])
 INDEX = {s: i for i, s in enumerate(STRATEGIES)}
@@ -122,7 +122,7 @@ def is_nash(sa, sb):
             best_response(1, sa)[1] <= cur[1] + 1e-9)
 
 if __name__ == "__main__":
-    A, B = (3, 5, 150, 4, 6), (7, 5, 200, 3, 6)
+    A, B = (3, 5, 150, 4, 6), (7, 5, 175, 4, 6)
     print("Start:", evaluate(A, B)["customers"], evaluate(A, B)["profit"])
     a, b, ok, h = find_nash(A, B)
     e = evaluate(a, b)
