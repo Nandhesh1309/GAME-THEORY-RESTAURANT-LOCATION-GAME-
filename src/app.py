@@ -2,6 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 import game as g
+N = g.N_CUSTOMERS
 
 st.set_page_config(page_title="Spatial Market | Restaurant Game", page_icon="🍽️", layout="wide", initial_sidebar_state="collapsed")
 
@@ -36,6 +37,27 @@ if "A" not in st.session_state:
 if "B" not in st.session_state:
     st.session_state.B = [7, 5, 175, 4, 6]
 
+def _sync_widgets():
+    """Push strategy values into slider widget keys (must run before sliders are created)."""
+    for n in ("A", "B"):
+        s_ = st.session_state[n]
+        st.session_state[f"price_{n}"] = s_[2]
+        st.session_state[f"quality_{n}"] = s_[3]
+        st.session_state[f"radius_{n}"] = s_[4]
+
+if st.session_state.pop("_needs_sync", False) or "price_A" not in st.session_state:
+    _sync_widgets()
+
+def _snap(v, options):
+    return min(options, key=lambda o: abs(o - v))
+
+def _valid(s):
+    return [int(_snap(s[0], g.LOCS)), int(_snap(s[1], g.LOCS)), _snap(s[2], g.PRICES),
+            _snap(s[3], g.QUALITIES), _snap(s[4], g.RADII)]
+
+# Guard: snap strategies to values that exist in game.py (avoids KeyError)
+st.session_state.A = _valid(st.session_state.A)
+st.session_state.B = _valid(st.session_state.B)
 A = tuple(st.session_state.A)
 B = tuple(st.session_state.B)
 res = g.evaluate(A, B)
@@ -48,9 +70,9 @@ st.markdown('<div class="hero"><div class="brand">SPATIAL <span>MARKET</span> ·
 # ---------- Restaurant strategy cards ----------
 c1, c2, c3 = st.columns([1,1,1.3])
 with c1:
-    st.markdown(f'<div class="card"><div class="card-title">Restaurant A · {na:.0f} customers</div><div class="big a">₹{pa:,.0f}</div><div style="color:#7f8ea3">Profit · {na:.0f}% market share</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="card"><div class="card-title">Restaurant A · {na:.0f} customers</div><div class="big a">₹{pa:,.0f}</div><div style="color:#7f8ea3">Profit · {na/N*100:.0f}% market share</div></div>', unsafe_allow_html=True)
 with c2:
-    st.markdown(f'<div class="card"><div class="card-title">Restaurant B · {nb:.0f} customers</div><div class="big b">₹{pb:,.0f}</div><div style="color:#7f8ea3">Profit · {nb:.0f}% market share</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="card"><div class="card-title">Restaurant B · {nb:.0f} customers</div><div class="big b">₹{pb:,.0f}</div><div style="color:#7f8ea3">Profit · {nb/N*100:.0f}% market share</div></div>', unsafe_allow_html=True)
 with c3:
     st.segmented_control("Place restaurant", ["A", "B"], key="placing", help="Choose a restaurant, then click anywhere on the town map to move it.")
 
@@ -61,9 +83,9 @@ for col, name, klass in [(left,"A","a"),(right,"B","b")]:
         s = st.session_state[name]
         st.markdown(f'<div class="card"><div class="card-title">{name} · strategy</div>', unsafe_allow_html=True)
         q1,q2,q3 = st.columns(3)
-        with q1: s[2] = st.select_slider("Price", g.PRICES, value=s[2], key=f"price_{name}")
-        with q2: s[3] = st.select_slider("Quality", g.QUALITIES, value=s[3], key=f"quality_{name}")
-        with q3: s[4] = st.select_slider("Delivery", g.RADII, value=s[4], key=f"radius_{name}", format_func=lambda x: f"{x} km")
+        with q1: s[2] = st.select_slider("Price", g.PRICES, key=f"price_{name}")
+        with q2: s[3] = st.select_slider("Quality", g.QUALITIES, key=f"quality_{name}")
+        with q3: s[4] = st.select_slider("Delivery", g.RADII, key=f"radius_{name}", format_func=lambda x: f"{x} km")
         st.session_state[name] = s
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -126,7 +148,7 @@ fig.update_layout(
 )
 
 st.markdown('<div style="margin:.65rem 0 .35rem;color:#718096;font-size:.76rem;letter-spacing:.13em;text-transform:uppercase">Live town map · choose A or B above, then click the map to place it</div>', unsafe_allow_html=True)
-event = st.plotly_chart(fig, use_container_width=True, key="town_map", on_select="rerun", selection_mode="points")
+event = st.plotly_chart(fig, width='stretch', key="town_map", on_select="rerun", selection_mode="points")
 
 # Handle map selection
 try:
@@ -147,7 +169,7 @@ with st.expander("⌃  MORE INFO · PULL UP", expanded=False):
     st.markdown("### Game intelligence")
     m1,m2,m3,m4 = st.columns(4)
     m1.metric("Customers", f"{na:.0f} / {nb:.0f}", "A / B")
-    m2.metric("Market share", f"{na:.0f}% / {nb:.0f}%", "A / B")
+    m2.metric("Market share", f"{na/N*100:.0f}% / {nb/N*100:.0f}%", "A / B")
     m3.metric("Profit", f"₹{pa:,.0f} / ₹{pb:,.0f}", "A / B")
     m4.metric("Model", "Modified Hotelling")
     st.markdown("**How customers choose**  ·  Customers compare price, quality, road travel cost, and delivery availability. Road travel is asymmetric, so the shortest physical route is not always the cheapest route.")
@@ -162,7 +184,7 @@ with st.expander("⌃  MORE INFO · PULL UP", expanded=False):
     if st.button("Find equilibrium", type="secondary"):
         a,b,ok,h = g.find_nash(A,B)
         e=g.evaluate(a,b)
-        st.session_state.A=list(a); st.session_state.B=list(b)
+        st.session_state.A=list(a); st.session_state.B=list(b); st.session_state._needs_sync=True
         st.session_state.eq_result=(a,b,ok,e,len(h)-1)
         st.rerun()
     if "eq_result" in st.session_state:
