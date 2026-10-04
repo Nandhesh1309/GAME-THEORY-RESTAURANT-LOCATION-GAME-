@@ -6,7 +6,9 @@ import networkx as nx
 TOWN_SIZE = 10
 N_CUSTOMERS = 500
 VAR_COST, FIXED_COST = 50, 1000
-PRICES, QUALITIES, RADII = [100, 125, 150, 175, 200, 225, 250], [1, 2, 3, 4, 5], [2, 4, 6, 8]
+PRICES = [100, 125, 150, 175, 200, 225, 250]
+QUALITIES = [1, 2, 3, 4, 5]
+RADII = [2, 4, 6, 8]
 LOCS = range(TOWN_SIZE + 1)
 STRATEGIES = [(x, y, p, q, r) for x in LOCS for y in LOCS
               for p in PRICES for q in QUALITIES for r in RADII]   # 9680
