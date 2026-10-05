@@ -24,12 +24,21 @@ ANCHORS = [("Town centre",      8.0, 5.0, 1.4, 200),
            ("Shopping mall",    3.0, 8.0, 1.0, 110),
            ("Business district", 16.0, 2.5, 1.2, 130)]
 
+# Residential areas: (name, centre_x, centre_y, spread, households)
+RESIDENTIAL = [("Greenview Homes",     2.0,  2.5, 0.9, 50),
+               ("Maple Gardens",       6.0,  8.8, 0.8, 40),
+               ("Lakeside Colony",    12.5,  8.0, 1.0, 50),
+               ("Sunrise Apartments", 18.5,  7.0, 0.9, 45),
+               ("Riverbend Homes",    12.5,  1.5, 0.9, 40)]
+
 def make_customers(seed=42):
     """Hub customers (dense areas) + evenly spread customers over the WHOLE town
     (one per 0.5 x 0.5 cell, jittered) so empty areas also have people."""
     rng = np.random.RandomState(seed)
     xs, ys = [], []
     for _, cx, cy, s, n in ANCHORS:
+        xs.append(rng.normal(cx, s, n)); ys.append(rng.normal(cy, s, n))
+    for _, cx, cy, s, n in RESIDENTIAL:
         xs.append(rng.normal(cx, s, n)); ys.append(rng.normal(cy, s, n))
     gx, gy = np.meshgrid(np.arange(0, TOWN_W, 0.5), np.arange(0, TOWN_H, 0.5))
     xs.append(gx.ravel() + rng.uniform(0, 0.5, gx.size))
@@ -42,11 +51,21 @@ N_CUSTOMERS = len(CX)
 
 # Road speeds (lower = faster)
 FAST, NORMAL, BOTTLENECK, SLOW_BACK = 0.7, 1.0, 2.0, 1.5
-BRIDGE_X = 10          # bridge between x=10 and x=11
-HIGHWAY_Y = 5          # highway runs along y = 5
+UNREACHABLE = 200      # road travel cost when no road path exists (e.g. closed bridge)
 
-def build_road_network():
+# Roads that can be closed. Highways run along a row (y); bridges cross a column (x -> x+1).
+HIGHWAYS = {"HW1": ("Main highway", 5), "HW2": ("North highway", 8)}
+BRIDGES = {"BR1": ("East bridge", 10), "BR2": ("West bridge", 5)}
+HIGHWAY_Y = HIGHWAYS["HW1"][1]      # kept for older scripts
+BRIDGE_X = BRIDGES["BR1"][1]
+ALL_ROADS = list(HIGHWAYS) + list(BRIDGES)
+CLOSED = frozenset()                # ids of roads currently closed
+
+def build_road_network(closed=frozenset()):
+    """Directed road graph. A closed highway/bridge has its road edges removed."""
     G = nx.DiGraph()
+    hw_rows = {y: rid for rid, (_, y) in HIGHWAYS.items()}
+    br_cols = {x: rid for rid, (_, x) in BRIDGES.items()}
     for x in range(TOWN_W + 1):
         for y in range(TOWN_H + 1):
             for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
@@ -54,9 +73,16 @@ def build_road_network():
                 if not (0 <= x2 <= TOWN_W and 0 <= y2 <= TOWN_H):
                     continue
                 w = NORMAL
-                if dy == 0 and y == HIGHWAY_Y: w = FAST                          # highway
-                elif x == BRIDGE_X and x2 == BRIDGE_X + 1: w = BOTTLENECK  # bridge, eastbound
-                elif x == BRIDGE_X + 1 and x2 == BRIDGE_X: w = SLOW_BACK   # bridge, westbound
+                east = dx == 1 and x in br_cols
+                west = dx == -1 and (x - 1) in br_cols
+                if east or west:                       # crossing a bridge
+                    if br_cols[x if east else x - 1] in closed:
+                        continue                       # bridge closed: no road
+                    w = BOTTLENECK if east else SLOW_BACK
+                if dy == 0 and y in hw_rows:            # on a highway
+                    if hw_rows[y] in closed:
+                        continue                       # highway closed: no road
+                    w = FAST
                 G.add_edge((x, y), (x2, y2), weight=w)
     return G
 
@@ -71,7 +97,8 @@ def travel_cost(x, y):
     nx_ = int(np.clip(round(x), 0, TOWN_W)); ny_ = int(np.clip(round(y), 0, TOWN_H))
     if (nx_, ny_) not in _node_cache:
         d = nx.single_source_dijkstra_path_length(ROADS_REV, (nx_, ny_), weight="weight")
-        _node_cache[(nx_, ny_)] = np.array([d[(a, b)] for a, b in zip(_GX, _GY)]) + _SNAP
+        _node_cache[(nx_, ny_)] = np.array([d.get((a, b), UNREACHABLE)
+                                            for a, b in zip(_GX, _GY)]) + _SNAP
     return _node_cache[(nx_, ny_)] + np.hypot(x - nx_, y - ny_)
 
 def customer_cost(s):
@@ -86,10 +113,25 @@ def profit(s, n):
     return (s[2] - VAR_COST) * n - FIXED_COST
 
 # Cost of every customer for every grid strategy (computed once)
-COSTS = np.array([customer_cost(s) for s in STRATEGIES], dtype=np.float32)
+COSTS = np.empty((len(STRATEGIES), N_CUSTOMERS), dtype=np.float32)
+for _i, _s in enumerate(STRATEGIES):
+    COSTS[_i] = customer_cost(_s)
 PRICE_ARR = np.array([s[2] for s in STRATEGIES])
 INDEX = {s: i for i, s in enumerate(STRATEGIES)}
 _free_cache = {}
+
+def set_closed(closed):
+    """Open/close roads. `closed` = set of road ids (see ALL_ROADS).
+    Rebuilds the road network and every customer cost (about 2 seconds)."""
+    global CLOSED, ROADS_REV
+    closed = frozenset(closed)
+    if closed == CLOSED:
+        return
+    CLOSED = closed
+    ROADS_REV = build_road_network(closed).reverse()
+    _node_cache.clear(); _free_cache.clear()
+    for i, s in enumerate(STRATEGIES):
+        COSTS[i] = customer_cost(s)
 
 def cost_of(s):
     """Customer costs for any strategy (grid or freely placed)."""
@@ -123,7 +165,7 @@ def best_response(player, other):
     i = int(np.argmax(pr))
     return STRATEGIES[i], float(pr[i])
 
-def find_nash(sa, sb, max_iter=50):
+def find_nash(sa, sb, max_iter=25):
     """Best-response iteration. Returns (sa, sb, converged, history)."""
     sa, sb = tuple(sa), tuple(sb)
     hist = [(sa, sb)]

@@ -65,6 +65,12 @@ if "A" not in st.session_state:
 if "B" not in st.session_state:
     st.session_state.B = [14.0, 5.0, 175, 4, 6]
 
+if "closed" not in st.session_state:
+    st.session_state.closed = set()
+if g.CLOSED != frozenset(st.session_state.closed):
+    with st.spinner("Updating roads (about 2 seconds)..."):
+        g.set_closed(st.session_state.closed)
+
 def _sync_widgets():
     for n in ("A", "B"):
         s_ = st.session_state[n]
@@ -96,8 +102,10 @@ cards = {}
 with c1: cards["A"] = st.empty()
 with c2: cards["B"] = st.empty()
 with c3:
-    st.segmented_control("Place restaurant", ["A", "B"], key="placing",
-                         help="Choose a restaurant, then click anywhere inside the town to put it there.")
+    st.segmented_control("Click mode", ["A", "B", "Roads"], key="placing",
+                         format_func=lambda v: {"A": "Place A", "B": "Place B", "Roads": "Open / close roads"}[v],
+                         help="Place A / Place B: click the map to put that restaurant there. "
+                              "Open / close roads: click a highway or bridge to close or reopen it.")
 
 left, right = st.columns(2)
 for col, name in [(left, "A"), (right, "B")]:
@@ -110,6 +118,23 @@ for col, name in [(left, "A"), (right, "B")]:
         with q3: s[4] = st.select_slider("Delivery", g.RADII, key=f"radius_{name}", format_func=lambda x: f"{x} km")
         st.session_state[name] = s
         st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------- Road controls (switch off = road closed) ----------
+_ver = st.session_state.get("_road_ver", 0)
+st.markdown('<div class="card-title" style="margin:.7rem 0 .25rem">Roads · switch OFF to close a road '
+            '(or use "Open / close roads" mode and click the road on the map)</div>', unsafe_allow_html=True)
+_rc = st.columns(len(g.ALL_ROADS))
+_new_closed = set()
+for _col, _rid in zip(_rc, g.ALL_ROADS):
+    _nm = (g.HIGHWAYS.get(_rid) or g.BRIDGES.get(_rid))[0]
+    _icon = "🛣️" if _rid in g.HIGHWAYS else "🌉"
+    if not _col.toggle(f"{_icon} {_nm}", value=_rid not in st.session_state.closed, key=f"road_{_rid}_{_ver}"):
+        _new_closed.add(_rid)
+st.session_state.closed = _new_closed
+if g.CLOSED != frozenset(_new_closed):
+    with st.spinner("Updating roads (about 2 seconds)..."):
+        g.set_closed(_new_closed)
+CLOSED = set(_new_closed)
 
 A = tuple(st.session_state.A); B = tuple(st.session_state.B)
 res = g.evaluate(A, B)
@@ -159,7 +184,7 @@ bc1, bc2, _sp = st.columns([1, 1.3, 4])
 if bc1.button("ℹ️ Game info", **_stretch_kw(st.button)):
     show_info()
 if bc2.button("🔍 Check equilibrium", type="primary", **_stretch_kw(st.button)):
-    with st.spinner("Searching for equilibrium (about 10 seconds)..."):
+    with st.spinner("Searching for equilibrium (up to ~20 seconds)..."):
         was_nash = g.is_nash(A, B)
         a, b, ok, h = g.find_nash(A, B)
         e = g.evaluate(a, b)
@@ -171,25 +196,45 @@ if bc2.button("🔍 Check equilibrium", type="primary", **_stretch_kw(st.button)
     st.rerun()
 
 # ---------- Click layer (free placement, 0.25 resolution) ----------
-def zone_text(x, y):
+def zone_text(x, y, closed=()):
     z = []
-    if abs(y - g.HIGHWAY_Y) <= 0.25: z.append("🛣️ Highway · fastest roads")
-    if g.BRIDGE_X <= x <= g.BRIDGE_X + 1: z.append("🌉 Bridge crossing · bottleneck")
+    for rid, (nm, hy) in g.HIGHWAYS.items():
+        if abs(y - hy) <= 0.25:
+            z.append(f"⛔ {nm} · CLOSED" if rid in closed else f"🛣️ {nm} · fastest roads")
+    for rid, (nm, bx) in g.BRIDGES.items():
+        if bx <= x <= bx + 1:
+            z.append(f"⛔ {nm} · CLOSED" if rid in closed else f"🌉 {nm} · bottleneck")
     for nm, cx, cy, sp, _n in g.ANCHORS:
         if np.hypot(x - cx, y - cy) <= sp * 1.6:
             z.append({"Town centre": "🏙️ Town centre · dense demand",
                       "Shopping mall": "🛍️ Shopping mall · demand hub",
                       "Business district": "🏢 Business district · demand hub"}[nm])
+    for nm, cx, cy, sp, _n in g.RESIDENTIAL:
+        if np.hypot(x - cx, y - cy) <= sp * 1.6:
+            z.append(f"🏠 {nm} · residential area")
     return "<br>".join(z) if z else "Free area · open land"
 
 @st.cache_data
-def click_layer():
+def click_layer(closed=()):
     xs = np.arange(0, W + 1e-9, 0.25); ys = np.arange(0, H + 1e-9, 0.25)
     gx, gy, gd = [], [], []
     for x in xs:
         for y in ys:
-            gx.append(float(x)); gy.append(float(y)); gd.append(["grid", float(x), float(y), zone_text(x, y)])
+            gx.append(float(x)); gy.append(float(y)); gd.append(["grid", float(x), float(y), zone_text(x, y, closed)])
     return gx, gy, gd
+
+def road_layer(closed):
+    """Clickable points along every highway and bridge (used in 'Open / close roads' mode)."""
+    rx, ry, rd = [], [], []
+    def tip(nm, rid):
+        return f"{nm} · {'CLOSED' if rid in closed else 'open'}<br><i>click to {'reopen' if rid in closed else 'close'}</i>"
+    for rid, (nm, hy) in g.HIGHWAYS.items():
+        for x in np.arange(0.25, W, 0.5):
+            rx.append(float(x)); ry.append(float(hy)); rd.append(["road", rid, 0, tip(nm, rid)])
+    for rid, (nm, bx) in g.BRIDGES.items():
+        for y in np.arange(0.25, H, 0.5):
+            rx.append(bx + 0.5); ry.append(float(y)); rd.append(["road", rid, 0, tip(nm, rid)])
+    return rx, ry, rd
 
 # ---------- Map ----------
 fig = go.Figure()
@@ -200,29 +245,58 @@ fig.add_shape(type="rect", x0=0, x1=W, y0=0, y1=H, fillcolor="#0c1420",
 fig.add_annotation(x=0.2, y=H-0.15, text="<b>TOWN</b>", showarrow=False, xanchor="left", yanchor="top",
                    font=dict(size=13, color="rgba(170,185,215,.75)"))
 
-# Hub labels (no background circles)
-icons = {"Town centre": "🏙️ Town centre", "Shopping mall": "🛍️ Mall", "Business district": "🏢 Business"}
+# Hub markings (gold diamond + framed label)
+hub_icon = {"Town centre": "🏙️", "Shopping mall": "🛍️", "Business district": "🏢"}
+fig.add_trace(go.Scatter(x=[h[1] for h in g.ANCHORS], y=[h[2] for h in g.ANCHORS], mode="markers",
+                         marker=dict(symbol="diamond", size=13, color="rgba(255,214,102,.95)",
+                                     line=dict(color="#fff3c4", width=1.5)),
+                         hoverinfo="skip", showlegend=False))
 for nm, cx, cy, sp, _n in g.ANCHORS:
-    fig.add_annotation(x=cx, y=min(cy + sp*1.4 + 0.2, H-0.5), text=icons[nm], showarrow=False,
-                       font=dict(size=11, color="rgba(205,215,240,.9)"))
+    fig.add_annotation(x=cx, y=cy, yshift=24, text=f"{hub_icon[nm]} <b>{nm}</b>", showarrow=False,
+                       font=dict(size=11, color="#ffe9a8"), bgcolor="rgba(40,32,8,.85)",
+                       bordercolor="rgba(255,214,102,.7)", borderwidth=1, borderpad=3)
 
-# Bridge
-fig.add_shape(type="rect", x0=g.BRIDGE_X+0.2, x1=g.BRIDGE_X+0.8, y0=0, y1=H, fillcolor="rgba(255,110,110,.09)",
-              line=dict(color="rgba(255,120,120,.55)", width=1.2, dash="dash"), layer="below")
-fig.add_annotation(x=g.BRIDGE_X+0.5, y=0.45, text="🌉 Bridge<br>(slow)", showarrow=False,
-                   font=dict(size=10, color="rgba(255,140,140,.95)"), bgcolor="rgba(12,20,32,.85)")
+# Residential area markings (green square + framed label)
+fig.add_trace(go.Scatter(x=[r[1] for r in g.RESIDENTIAL], y=[r[2] for r in g.RESIDENTIAL], mode="markers",
+                         marker=dict(symbol="square", size=11, color="rgba(110,220,150,.95)",
+                                     line=dict(color="#d9ffe8", width=1.5)),
+                         hoverinfo="skip", showlegend=False))
+for nm, cx, cy, sp, _n in g.RESIDENTIAL:
+    fig.add_annotation(x=cx, y=cy, yshift=-22, text=f"🏠 {nm}", showarrow=False,
+                       font=dict(size=10, color="#c9f5d9"), bgcolor="rgba(8,34,20,.85)",
+                       bordercolor="rgba(110,220,150,.6)", borderwidth=1, borderpad=3)
 
-# Highway
-fig.add_shape(type="rect", x0=0, x1=W, y0=g.HIGHWAY_Y-0.22, y1=g.HIGHWAY_Y+0.22, fillcolor="rgba(110,160,255,.17)",
-              line=dict(width=0), layer="below")
-fig.add_trace(go.Scatter(x=[0, W], y=[g.HIGHWAY_Y]*2, mode="lines",
-                         line=dict(color="rgba(190,215,255,.45)", width=1.5, dash="dash"),
-                         hoverinfo="skip", showlegend=False))
-fig.add_trace(go.Scatter(x=[0.7+1.2*i for i in range(int(W/1.2))], y=[g.HIGHWAY_Y]*int(W/1.2), mode="text",
-                         text=["»"]*int(W/1.2), textfont=dict(size=15, color="rgba(160,195,255,.75)"),
-                         hoverinfo="skip", showlegend=False))
-fig.add_annotation(x=W-0.15, y=g.HIGHWAY_Y+0.45, text="🛣️ Highway · fast", showarrow=False, xanchor="right",
-                   font=dict(size=11, color="rgba(160,195,255,.95)"))
+# Bridges (red = open bottleneck, dark = closed)
+for k, (rid, (nm, bx)) in enumerate(g.BRIDGES.items()):
+    closed_ = rid in CLOSED
+    fig.add_shape(type="rect", x0=bx+0.2, x1=bx+0.8, y0=0, y1=H,
+                  fillcolor="rgba(20,20,26,.9)" if closed_ else "rgba(255,110,110,.09)",
+                  line=dict(color="rgba(255,70,70,.95)" if closed_ else "rgba(255,120,120,.55)",
+                            width=2 if closed_ else 1.2, dash="solid" if closed_ else "dash"), layer="below")
+    fig.add_annotation(x=bx+0.5, y=0.45 if k % 2 == 0 else H-0.45,
+                       text=(f"⛔ {nm}<br>CLOSED" if closed_ else f"🌉 {nm}<br>(slow)"), showarrow=False,
+                       font=dict(size=10, color="rgba(255,90,90,1)" if closed_ else "rgba(255,140,140,.95)"),
+                       bgcolor="rgba(12,20,32,.9)")
+
+# Highways (blue = open, grey = closed)
+for rid, (nm, hy) in g.HIGHWAYS.items():
+    closed_ = rid in CLOSED
+    fig.add_shape(type="rect", x0=0, x1=W, y0=hy-0.22, y1=hy+0.22,
+                  fillcolor="rgba(120,120,130,.16)" if closed_ else "rgba(110,160,255,.17)",
+                  line=dict(width=0), layer="below")
+    fig.add_trace(go.Scatter(x=[0, W], y=[hy]*2, mode="lines",
+                             line=dict(color="rgba(255,90,90,.6)" if closed_ else "rgba(190,215,255,.45)",
+                                       width=1.5, dash="dot" if closed_ else "dash"),
+                             hoverinfo="skip", showlegend=False))
+    n_ = int(W/1.2)
+    fig.add_trace(go.Scatter(x=[0.7+1.2*i for i in range(n_)], y=[hy]*n_, mode="text",
+                             text=["✕" if closed_ else "»"]*n_,
+                             textfont=dict(size=13 if closed_ else 15,
+                                           color="rgba(255,90,90,.75)" if closed_ else "rgba(160,195,255,.75)"),
+                             hoverinfo="skip", showlegend=False))
+    fig.add_annotation(x=W-0.15, y=hy+0.45, xanchor="right", showarrow=False,
+                       text=(f"⛔ {nm} · CLOSED" if closed_ else f"🛣️ {nm} · fast"),
+                       font=dict(size=11, color="rgba(255,110,110,.95)" if closed_ else "rgba(160,195,255,.95)"))
 
 # Customers: blue -> A, orange -> B, violet -> tie
 w = res["w"]
@@ -239,7 +313,11 @@ for s_, nm, col, edge, dx in ((A, "A", "#5fa8ff", "#dbeafe", -off), (B, "B", "#f
                              marker=dict(size=30, color=col, line=dict(color=edge, width=2)),
                              textfont=dict(color="#07101c", size=14), hoverinfo="skip", showlegend=False))
 
-gx, gy, gd = click_layer()
+_mode = st.session_state.get("placing") or "A"
+if _mode == "Roads":
+    gx, gy, gd = road_layer(CLOSED)
+else:
+    gx, gy, gd = click_layer(tuple(sorted(CLOSED)))
 fig.add_trace(go.Scatter(x=gx, y=gy, mode="markers", marker=dict(size=14, color="rgba(255,255,255,0.01)"),
                          customdata=gd, hovertemplate="%{customdata[3]}<extra></extra>",
                          hoverlabel=dict(bgcolor="#101826", font=dict(color="#e2e8f0", size=12)), showlegend=False))
@@ -254,10 +332,13 @@ fig.update_layout(
 )
 
 st.markdown('<div style="margin:.5rem 0 .3rem;color:#718096;font-size:.76rem;letter-spacing:.13em;text-transform:uppercase">'
-            'Choose A or B at the top, then click anywhere inside the town to place it · hover to see what is there</div>',
+            'Click mode: Place A / Place B = click the map to put the restaurant there · '
+            'Open / close roads = click a highway or bridge to close it · hover to see what is there</div>',
             unsafe_allow_html=True)
 st.markdown('<div style="font-size:.8rem;color:#aab7ca;margin-bottom:.4rem">'
-            '🛣️ Highway (fast) &nbsp;·&nbsp; 🌉 Bridge (slow) &nbsp;·&nbsp; 🏙️🛍️🏢 Demand hubs &nbsp;·&nbsp; '
+            '🛣️ Highway (fast) &nbsp;·&nbsp; 🌉 Bridge (slow) &nbsp;·&nbsp; ⛔ Closed road &nbsp;·&nbsp; '
+            '<span style="color:#ffd666">◆</span> 🏙️🛍️🏢 Demand hubs &nbsp;·&nbsp; '
+            '<span style="color:#6edc96">■</span> 🏠 Residential &nbsp;·&nbsp; '
             '<span style="color:#5fa8ff">●</span> A\'s customers '
             '<span style="color:#ff9d4d">●</span> B\'s <span style="color:#c4a8ff">●</span> tie</div>', unsafe_allow_html=True)
 event = st.plotly_chart(fig, **_stretch_kw(st.plotly_chart), key=f"town_map_{st.session_state.get('_map_n', 0)}",
@@ -270,8 +351,15 @@ except Exception:
     points = []
 for point in reversed(points):
     cd = point.get("customdata")
+    if cd and cd[0] == "road":
+        _c = set(st.session_state.closed)
+        _c.symmetric_difference_update({cd[1]})
+        st.session_state.closed = _c
+        st.session_state["_road_ver"] = st.session_state.get("_road_ver", 0) + 1
+        st.session_state["_map_n"] = st.session_state.get("_map_n", 0) + 1
+        st.rerun()
     if cd and cd[0] == "grid":
-        name = st.session_state.placing
+        name = st.session_state.get("placing") or "A"
         st.session_state[name][0] = float(cd[1]); st.session_state[name][1] = float(cd[2])
         st.session_state["_needs_sync"] = True
         st.session_state["_map_n"] = st.session_state.get("_map_n", 0) + 1
