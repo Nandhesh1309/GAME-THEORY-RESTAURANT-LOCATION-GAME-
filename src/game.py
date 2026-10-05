@@ -19,30 +19,33 @@ LOCS = LOCS_X
 STRATEGIES = [(x, y, p, q, r) for x in LOCS_X for y in LOCS_Y
               for p in PRICES for q in QUALITIES for r in RADII]
 
+# Spacing of the evenly spread customers (bigger = fewer people). 1.0 -> 200 people.
+UNIFORM_STEP = 1.0
+
 # Demand hubs: (name, centre_x, centre_y, spread, customers)
-ANCHORS = [("Town centre",      8.0, 5.0, 1.4, 200),
-           ("Shopping mall",    3.0, 8.0, 1.0, 110),
-           ("Business district", 16.0, 2.5, 1.2, 130)]
+ANCHORS = [("Town centre",      8.0, 5.0, 1.4, 100),
+           ("Shopping mall",    3.0, 8.0, 1.0, 55),
+           ("Business district", 16.0, 2.5, 1.2, 65)]
 
 # Residential areas: (name, centre_x, centre_y, spread, households)
-RESIDENTIAL = [("Greenview Homes",     2.0,  2.5, 0.9, 50),
-               ("Maple Gardens",       6.0,  8.8, 0.8, 40),
-               ("Lakeside Colony",    12.5,  8.0, 1.0, 50),
-               ("Sunrise Apartments", 18.5,  7.0, 0.9, 45),
-               ("Riverbend Homes",    12.5,  1.5, 0.9, 40)]
+RESIDENTIAL = [("Greenview Homes",     2.0,  2.5, 0.9, 25),
+               ("Maple Gardens",       6.0,  8.8, 0.8, 20),
+               ("Lakeside Colony",    12.5,  8.0, 1.0, 25),
+               ("Sunrise Apartments", 18.5,  7.0, 0.9, 22),
+               ("Riverbend Homes",    12.5,  1.5, 0.9, 20)]
 
 def make_customers(seed=42):
     """Hub customers (dense areas) + evenly spread customers over the WHOLE town
-    (one per 0.5 x 0.5 cell, jittered) so empty areas also have people."""
+    (one per 1 x 1 cell, jittered) so empty areas also have people."""
     rng = np.random.RandomState(seed)
     xs, ys = [], []
     for _, cx, cy, s, n in ANCHORS:
         xs.append(rng.normal(cx, s, n)); ys.append(rng.normal(cy, s, n))
     for _, cx, cy, s, n in RESIDENTIAL:
         xs.append(rng.normal(cx, s, n)); ys.append(rng.normal(cy, s, n))
-    gx, gy = np.meshgrid(np.arange(0, TOWN_W, 0.5), np.arange(0, TOWN_H, 0.5))
-    xs.append(gx.ravel() + rng.uniform(0, 0.5, gx.size))
-    ys.append(gy.ravel() + rng.uniform(0, 0.5, gy.size))
+    gx, gy = np.meshgrid(np.arange(0, TOWN_W, UNIFORM_STEP), np.arange(0, TOWN_H, UNIFORM_STEP))
+    xs.append(gx.ravel() + rng.uniform(0, UNIFORM_STEP, gx.size))
+    ys.append(gy.ravel() + rng.uniform(0, UNIFORM_STEP, gy.size))
     return (np.clip(np.concatenate(xs), 0, TOWN_W),
             np.clip(np.concatenate(ys), 0, TOWN_H))
 
@@ -185,7 +188,7 @@ def best_response(player, other):
     i = int(np.argmax(pr))
     return STRATEGIES[i], float(pr[i])
 
-def find_nash(sa, sb, max_iter=25):
+def find_nash(sa, sb, max_iter=60):
     """Best-response iteration. Returns (sa, sb, converged, history)."""
     sa, sb = tuple(sa), tuple(sb)
     hist = [(sa, sb)]

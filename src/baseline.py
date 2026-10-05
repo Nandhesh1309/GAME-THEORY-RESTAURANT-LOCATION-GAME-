@@ -4,10 +4,10 @@ Only locations are chosen."""
 import numpy as np
 
 TOWN_W, TOWN_H = 20, 10
-gx, gy = np.meshgrid(np.arange(0, TOWN_W, 0.5), np.arange(0, TOWN_H, 0.5))
+gx, gy = np.meshgrid(np.arange(0, TOWN_W, 1.0), np.arange(0, TOWN_H, 1.0))
 rng = np.random.RandomState(42)
-CX = gx.ravel() + rng.uniform(0, 0.5, gx.size)     # SIMULATED, evenly spread customers
-CY = gy.ravel() + rng.uniform(0, 0.5, gy.size)
+CX = gx.ravel() + rng.uniform(0, 1.0, gx.size)     # SIMULATED, evenly spread customers
+CY = gy.ravel() + rng.uniform(0, 1.0, gy.size)
 N = len(CX)
 LOCS = [(x, y) for x in range(TOWN_W + 1) for y in range(TOWN_H + 1)]
 DIST = np.array([np.hypot(CX - x, CY - y) for x, y in LOCS])
