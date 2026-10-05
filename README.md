@@ -12,7 +12,7 @@ The program is deployed online. No installation is needed.
 
 STEP 1. Open the link below in any web browser (Chrome, Edge or Firefox):
 
-&#x20;       \[paste your deployed app link here]
+&#x20;      (https://spatialmarketrestaurantlocationgame.streamlit.app/)
 
 &#x20;       The first load can take 10-20 seconds. Wait until the page appears.
 
