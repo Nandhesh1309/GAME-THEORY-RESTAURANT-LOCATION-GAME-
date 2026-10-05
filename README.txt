@@ -1,57 +1,38 @@
-RESTAURANT LOCATION GAME (Game Theory Elective Project)
-Extended Hotelling model with 4 real-world modifications.
-All customer data is SIMULATED (random seed 42).
+RESTAURANT LOCATION GAME - HOW TO RUN
 
-REQUIREMENTS
-- Python 3.10 or newer
+The program is deployed online. No installation is needed.
 
-HOW TO RUN
-1. Open a terminal in the project folder.
-2. Install libraries:
-       pip install -r requirements.txt
-3. Run the interactive app:
-       python -m streamlit run src/app.py
-   A browser tab opens (usually http://localhost:8501).
-4. Use the sidebar sliders to set each restaurant's location, price,
-   quality and delivery radius. The map and results update at once.
-5. Click "Is this a Nash equilibrium?" to test the current setting.
-6. Click "Find equilibrium" to run best-response search.
+STEP 1. Open the link below in any web browser (Chrome, Edge or Firefox):
+        [paste your deployed app link here]
+        The first load can take 10-20 seconds. Wait until the page appears.
 
-OTHER SCRIPTS
-- python src/game.py      Prints the equilibrium of the modified game.
-- python src/baseline.py  Prints the classical Hotelling equilibrium.
-- python src/main.py      Shows a static plot of one scenario.
+STEP 2. A "Welcome to Spatial Market" window opens. Click "Start playing".
 
-FILES
-- src/game.py      Game engine (customers, roads, profit, best response, Nash)
-- src/app.py       Streamlit interface
-- src/baseline.py  Classical baseline for comparison
-- src/main.py      Static demo plot
+STEP 3. Place the restaurants.
+        On the right, under "Click mode", choose "Place A" or "Place B".
+        Then click anywhere on the town map to put that restaurant there.
+        Repeat for the other restaurant.
 
-MODEL
-- 10x10 town, 100 customers, 2 restaurants (A and B).
-- Strategy = (x, y, price, quality, delivery radius).
-  x,y in 0..10; price in {100,150,200,250}; quality 1..5; radius in {2,4,6,8}.
-  9,680 strategies per restaurant.
-- Modifications:
-  1. Price and quality: cost = price + 10*travel - 5*quality
-  2. Delivery: fee = 10 + 2*distance, available within the radius
-  3. 2D clustering: town centre, shopping mall, business district
-  4. Asymmetric roads: highway (0.7), normal (1.0), slow (1.5),
-     bottleneck bridge (2.0); shortest-path travel cost
-- Payoff: profit = (price - 50) * customers - 1000
-- Customers choose the lowest-cost option; ties are split 50/50.
-- Equilibrium: best-response iteration, then check that neither
-  restaurant has a profitable unilateral deviation.
+STEP 4. Set each restaurant's strategy.
+        Under "Strategies", open the tab "Restaurant A" or "Restaurant B" and
+        use the sliders for Price, Quality and Delivery radius.
 
-RESULT
-- Classical game: both at (5,5), 50 customers each, profit 4000 each.
-- Modified game: both at (5,5), price 100, quality 5, radius 8,
-  50 customers each, profit 1500 each. Verified Nash equilibrium.
+STEP 5. Open or close a bridge.
+        Under "Roads", switch a bridge toggle (East bridge / West bridge)
+        OFF to close it, and ON to open it again.
+        You can also choose "Roads" under "Click mode" and click a bridge
+        on the map to close or reopen it.
 
-LIMITATION
-- Quality has no cost in this model, so the equilibrium always
-  picks the highest quality (5).
+STEP 6. Read the results.
+        The scoreboard at the top shows each restaurant's profit, customers,
+        price, quality and market share. On the map, blue dots are customers
+        of A, orange dots are customers of B, and violet dots are ties.
 
-REPOSITORY
-https://github.com/Nandhesh1309/GAME-THEORY-RESTAURANT-LOCATION-GAME-
+STEP 7. Check the Nash equilibrium.
+        Click "Game info" to see whether the current setting is a Nash
+        equilibrium.
+        Click "Equilibrium" to run the best-response search. It can take
+        15-30 seconds. If an equilibrium is found, both restaurants move to it
+        and a result window opens.
+
+All customers in the town are simulated data.
