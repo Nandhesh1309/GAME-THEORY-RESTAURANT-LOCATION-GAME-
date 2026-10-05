@@ -49,22 +49,19 @@ def make_customers(seed=42):
 CX, CY = make_customers()
 N_CUSTOMERS = len(CX)
 
-# Road speeds (lower = faster)
-FAST, NORMAL, BOTTLENECK, SLOW_BACK = 0.7, 1.0, 2.0, 1.5
+# Road speeds (higher = slower)
+NORMAL, BOTTLENECK, SLOW_BACK = 1.0, 2.0, 1.5
 UNREACHABLE = 200      # road travel cost when no road path exists (e.g. closed bridge)
 
-# Roads that can be closed. Highways run along a row (y); bridges cross a column (x -> x+1).
-HIGHWAYS = {"HW1": ("Main highway", 5), "HW2": ("North highway", 8)}
+# Bridges that can be closed. A bridge crosses a column (x -> x+1).
 BRIDGES = {"BR1": ("East bridge", 10), "BR2": ("West bridge", 5)}
-HIGHWAY_Y = HIGHWAYS["HW1"][1]      # kept for older scripts
-BRIDGE_X = BRIDGES["BR1"][1]
-ALL_ROADS = list(HIGHWAYS) + list(BRIDGES)
-CLOSED = frozenset()                # ids of roads currently closed
+BRIDGE_X = BRIDGES["BR1"][1]        # kept for older scripts
+ALL_ROADS = list(BRIDGES)
+CLOSED = frozenset()                # ids of bridges currently closed
 
 def build_road_network(closed=frozenset()):
-    """Directed road graph. A closed highway/bridge has its road edges removed."""
+    """Directed road graph. A closed bridge has its crossing edges removed."""
     G = nx.DiGraph()
-    hw_rows = {y: rid for rid, (_, y) in HIGHWAYS.items()}
     br_cols = {x: rid for rid, (_, x) in BRIDGES.items()}
     for x in range(TOWN_W + 1):
         for y in range(TOWN_H + 1):
@@ -79,10 +76,6 @@ def build_road_network(closed=frozenset()):
                     if br_cols[x if east else x - 1] in closed:
                         continue                       # bridge closed: no road
                     w = BOTTLENECK if east else SLOW_BACK
-                if dy == 0 and y in hw_rows:            # on a highway
-                    if hw_rows[y] in closed:
-                        continue                       # highway closed: no road
-                    w = FAST
                 G.add_edge((x, y), (x2, y2), weight=w)
     return G
 
@@ -114,29 +107,55 @@ def profit(s, n):
 
 # Cost of every customer for every grid strategy (computed once)
 COSTS = np.empty((len(STRATEGIES), N_CUSTOMERS), dtype=np.float32)
-for _i, _s in enumerate(STRATEGIES):
-    COSTS[_i] = customer_cost(_s)
+
+def build_costs(out):
+    """Fill `out` with every customer's cost for every grid strategy (vectorised = fast)."""
+    n_loc = (TOWN_W + 1) * (TOWN_H + 1)
+    T = np.empty((n_loc, N_CUSTOMERS)); D = np.empty((n_loc, N_CUSTOMERS))
+    k = 0
+    for x in LOCS_X:
+        for y in LOCS_Y:
+            T[k] = travel_cost(x, y)
+            D[k] = np.hypot(CX - x, CY - y)
+            k += 1
+    view = out.reshape(n_loc, len(PRICES), len(QUALITIES), len(RADII), N_CUSTOMERS)
+    for pi, p in enumerate(PRICES):
+        for qi, q in enumerate(QUALITIES):
+            dine = p + 12 * T - 4 * q
+            best = np.minimum(dine, p + (30 + 5 * D) - 4 * q)
+            for ri, r in enumerate(RADII):
+                view[:, pi, qi, ri, :] = np.where(D <= r, best, dine)
+
+build_costs(COSTS)
 PRICE_ARR = np.array([s[2] for s in STRATEGIES])
 INDEX = {s: i for i, s in enumerate(STRATEGIES)}
 _free_cache = {}
 
+_dirty = False      # True when COSTS is out of date (roads changed)
+
+def _ensure_costs():
+    """Rebuild the big cost table only when it is actually needed (equilibrium search)."""
+    global _dirty
+    if _dirty:
+        build_costs(COSTS)
+        _dirty = False
+
 def set_closed(closed):
     """Open/close roads. `closed` = set of road ids (see ALL_ROADS).
-    Rebuilds the road network and every customer cost (about 2 seconds)."""
-    global CLOSED, ROADS_REV
+    Fast: only rebuilds the road map; the big cost table is rebuilt later, when needed."""
+    global CLOSED, ROADS_REV, _dirty
     closed = frozenset(closed)
     if closed == CLOSED:
         return
     CLOSED = closed
     ROADS_REV = build_road_network(closed).reverse()
     _node_cache.clear(); _free_cache.clear()
-    for i, s in enumerate(STRATEGIES):
-        COSTS[i] = customer_cost(s)
+    _dirty = True
 
 def cost_of(s):
     """Customer costs for any strategy (grid or freely placed)."""
     s = tuple(s)
-    if s in INDEX:
+    if s in INDEX and not _dirty:
         return COSTS[INDEX[s]]
     if s not in _free_cache:
         if len(_free_cache) > 500: _free_cache.clear()
@@ -156,6 +175,7 @@ def evaluate(sa, sb):
 
 def best_response(player, other):
     """Best strategy (searched on the grid) for `player` (0=A, 1=B) given the other's."""
+    _ensure_costs()
     oc = cost_of(other)
     if player == 0:
         n = _share(COSTS, oc).sum(axis=1)

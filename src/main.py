@@ -10,7 +10,6 @@ w = res["a_wins"]
 
 fig, ax = plt.subplots(figsize=(12, 6.5))
 ax.add_patch(plt.Rectangle((0, 0), g.TOWN_W, g.TOWN_H, fill=False, lw=2, ec="gray"))
-ax.axhline(5, color="tab:blue", alpha=.3, lw=8, label="Highway (fast)")
 ax.axvspan(g.BRIDGE_X, g.BRIDGE_X + 1, color="red", alpha=.12, label="Bridge (bottleneck)")
 ax.scatter(g.CX[w], g.CY[w], s=8, c="tab:blue", alpha=.6)
 ax.scatter(g.CX[~w], g.CY[~w], s=8, c="tab:orange", alpha=.6)
