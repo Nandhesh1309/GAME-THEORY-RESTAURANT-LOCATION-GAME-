@@ -3,7 +3,7 @@ RESTAURANT LOCATION GAME - HOW TO RUN
 The program is deployed online. No installation is needed.
 
 STEP 1. Open the link below in any web browser (Chrome, Edge or Firefox):
-        [paste your deployed app link here]
+        https://spatialmarketrestaurantlocationgame.streamlit.app/
         The first load can take 10-20 seconds. Wait until the page appears.
 
 STEP 2. A "Welcome to Spatial Market" window opens. Click "Start playing".
